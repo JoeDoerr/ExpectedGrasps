@@ -14,10 +14,29 @@ from vgn.simulation import ClutterRemovalSim
 from vgn.utils.transform import Rotation, Transform
 
 
-OBJECT_COUNT_LAMBDA = 4
+OBJECT_COUNT_LAMBDA = 6 #4
 MAX_VIEWPOINT_COUNT = 6
 GRASPS_PER_SCENE = 120
+#python scripts/generate_data.py data/raw/foo --scene pile --object-set blocks --num-grasps=1000 --sim-gui
+#python scripts/generate_data.py data/raw/foo --scene conveyor_belt --object-set recycling --num-grasps=1000 --sim-gui
+#https://github.com/c-yiting/pybullet-URDF-models/tree/main?tab=readme-ov-file
 
+"""
+They first create a random packed scene by dropping objects in. 
+They randomly sample the surface and find one point and corresponding normal. They ensure that the normal is pointing upwards which I don't think we need. 
+Then they choose a random grasp depth. Then they turn the point into the pos of the gripper which is at the point sampled times the normal direction times the grasp depth. 
+They choose rotations for the gripper to try and use the orientation and position and width as grasp configurations to try. 
+Then go for the grasp and see what happens. 
+From the different yaws they tried, they find the most successful sequence of yaws and chooses the center of those yaws as the grasp to use as it is most robust. 
+They store the data as the input image, grasp, and success of grasp.
+
+TODO:
+Fuse multiple RGBD views of the scene (Potentially necessary)
+Get contact points for the given grasp
+Variation setup
+Bandit for choices
+Network set up
+"""
 
 def main(args):
     workers, rank = setup_mpi()
@@ -66,9 +85,11 @@ def main(args):
             # sample and evaluate a grasp point
             point, normal = sample_grasp_point(pc, finger_depth)
             grasp, label = evaluate_grasp_point(sim, point, normal)
+            expected_value = evaluate_expected_value(sim, grasp, 10)
 
             # store the sample
-            write_grasp(args.root, scene_id, grasp, label)
+            write_grasp(args.root, scene_id, grasp, expected_value)
+            #write_grasp(args.root, scene_id, grasp, label)
             pbar.update()
 
     pbar.close()
@@ -149,11 +170,27 @@ def evaluate_grasp_point(sim, pos, normal, num_rotations=6):
 
     return Grasp(Transform(ori, pos), width), int(np.max(outcomes))
 
+def evaluate_expected_value(sim, grasp, num_variations):
+    """
+    Given a grasp, usually successful, try it over variation in a large variety of physical parameters
+    Randomize the object that we are going for
+    Output the expected value of the success rate of the grasp over variations
+    """
+    original_friction = sim.get_body_friction()
+    outcomes, widths = [], []
+    for i in range(num_variations):
+        sim.restore_state()
+        sim.randomize_friction(original_friction)
+        outcome, width = sim.execute_grasp(grasp, remove=False)
+        outcomes.append(float(outcome))
+        widths.append(width)
+    expected_value = np.mean(np.asarray(outcomes))
+    return expected_value
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("root", type=Path)
-    parser.add_argument("--scene", type=str, choices=["pile", "packed"], default="pile")
+    parser.add_argument("--scene", type=str, choices=["pile", "packed", "conveyor_belt"], default="pile")
     parser.add_argument("--object-set", type=str, default="blocks")
     parser.add_argument("--num-grasps", type=int, default=10000)
     parser.add_argument("--sim-gui", action="store_true")

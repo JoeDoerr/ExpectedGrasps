@@ -1,22 +1,17 @@
-# Volumetric Grasping Network
+# Modification to Volumetric Grasping Network
 
-VGN is a 3D convolutional neural network for real-time 6 DOF grasp pose detection. The network accepts a Truncated Signed Distance Function (TSDF) representation of the scene and outputs a volume of the same spatial resolution, where each cell contains the predicted quality, orientation, and width of a grasp executed at the center of the voxel. The network is trained on a synthetic grasping dataset generated with physics simulation.
+Including new objects that simulate recyclables and added more robust grasp dataset generation
 
-![overview](docs/overview.png)
+## Initially from:
 
-This repository contains the implementation of the following publication:
-
-* M. Breyer, J. J. Chung, L. Ott, R. Siegwart, and J. Nieto. Volumetric Grasping Network: Real-time 6 DOF Grasp Detection in Clutter. _Conference on Robot Learning (CoRL 2020)_, 2020. [[pdf](http://arxiv.org/abs/2101.01132)][[video](https://youtu.be/FXjvFDcV6E0)]
-
-If you use this work in your research, please [cite](#citing) accordingly.
-
-The next sections provide instructions for getting started with VGN.
-
-* [Installation](#installation)
-* [Dataset Generation](#data-generation)
-* [Network Training](#network-training)
-* [Simulated Grasping](#simulated-grasping)
-* [Robot Grasping](#robot-grasping)
+```
+@inproceedings{breyer2020volumetric,
+ title={Volumetric Grasping Network: Real-time 6 DOF Grasp Detection in Clutter},
+ author={Breyer, Michel and Chung, Jen Jen and Ott, Lionel and Roland, Siegwart and Juan, Nieto},
+ booktitle={Conference on Robot Learning},
+ year={2020},
+}
+```
 
 ## Installation
 
@@ -113,35 +108,3 @@ python scripts/sim_grasp.py --model data/models/vgn_conv.pth [--sim-gui] [--rviz
 * To detect grasps using GPD, you first need to install and launch the [`gpd_ros`](https://github.com/atenpas/gpd_ros) node (`roslaunch vgn gpd.launch`).
 
 Use the `clutter_removal.ipynb` notebook to compute metrics and visualize failure cases of an experiment.
-
-## Robot Grasping
-
-This package contains an example of open-loop grasp execution with a Franka Emika Panda and a wrist-mounted Intel Realsense D435. Since the robot drivers are not officially supported on ROS noetic yet, we used the following workaround:
-
-- Launch the roscore and hardware drivers on a NUC with [`libfranka`](https://frankaemika.github.io/docs/installation_linux.html) installed.
-- Run MoveIt and the VGN scripts on a second computer with a ROS noetic installation connected to the same roscore following these [instructions](http://wiki.ros.org/ROS/Tutorials/MultipleMachines). This requires the latest version of [`panda_moveit_config`](https://github.com/ros-planning/panda_moveit_config).
-
-First, on the NUC, start a roscore and launch the robot and sensor drivers: 
-
-```
-roscore &
-roslaunch vgn panda_grasp.launch
-```
-
-Then, on the 20.04 computer, run
-
-```
-roslaunch panda_moveit_config move_group.launch
-python scripts/panda_grasp.py --model data/models/vgn_conv.pth
-```
-
-## Citing
-
-```
-@inproceedings{breyer2020volumetric,
- title={Volumetric Grasping Network: Real-time 6 DOF Grasp Detection in Clutter},
- author={Breyer, Michel and Chung, Jen Jen and Ott, Lionel and Roland, Siegwart and Juan, Nieto},
- booktitle={Conference on Robot Learning},
- year={2020},
-}
-```

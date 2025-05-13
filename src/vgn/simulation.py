@@ -3,16 +3,18 @@ import time
 
 import numpy as np
 import pybullet
+import pybullet as p
 
 from vgn.grasp import Label
 from vgn.perception import *
 from vgn.utils import btsim, workspace_lines
 from vgn.utils.transform import Rotation, Transform
+import random
 
 
 class ClutterRemovalSim(object):
     def __init__(self, scene, object_set, gui=True, seed=None):
-        assert scene in ["pile", "packed"]
+        assert scene in ["pile", "packed", "conveyor_belt"]
 
         self.urdf_root = Path("data/urdfs")
         self.scene = scene
@@ -28,14 +30,19 @@ class ClutterRemovalSim(object):
         self.size = 6 * self.gripper.finger_depth
         intrinsic = CameraIntrinsic(640, 480, 540.0, 540.0, 320.0, 240.0)
         self.camera = self.world.add_camera(intrinsic, 0.1, 2.0)
+        self.scene_ids = []
 
     @property
     def num_objects(self):
         return max(0, self.world.p.getNumBodies() - 1)  # remove table from body count
 
+    # def discover_objects(self):
+    #     root = self.urdf_root / self.object_set
+    #     self.object_urdfs = [f for f in root.iterdir() if f.suffix == ".urdf"]
+
     def discover_objects(self):
         root = self.urdf_root / self.object_set
-        self.object_urdfs = [f for f in root.iterdir() if f.suffix == ".urdf"]
+        self.object_urdfs = [f for f in root.rglob("*.urdf")]
 
     def save_state(self):
         self._snapshot_id = self.world.save_state()
@@ -63,8 +70,30 @@ class ClutterRemovalSim(object):
             self.generate_pile_scene(object_count, table_height)
         elif self.scene == "packed":
             self.generate_packed_scene(object_count, table_height)
+        elif self.scene == "conveyor_belt":
+            self.generate_conveyor_belt(object_count, table_height)
         else:
             raise ValueError("Invalid scene argument")
+
+    def get_body_friction(self):
+        frictions = []
+        for body in self.scene_ids:
+            dynamics = p.getDynamicsInfo(body, -1)
+            lateral_friction = dynamics[1]
+            frictions.append(lateral_friction)
+        return frictions
+
+    def randomize_friction(self, original_frictions=None, var=0.2):
+        if original_frictions is None:
+            original_frictions = self.get_body_friction()
+        for body_id, base_friction in zip(self.scene_ids, original_frictions):
+            new_friction = base_friction + random.uniform(-var, var)
+            new_friction = max(0.1, new_friction)
+
+            num_joints = p.getNumJoints(body_id)
+            p.changeDynamics(body_id, -1, lateralFriction=new_friction)
+            for link_index in range(num_joints): #These objects shouldn't really have different links with different frictions
+                p.changeDynamics(body_id, link_index, lateralFriction=new_friction)
 
     def draw_workspace(self):
         points = workspace_lines(self.size)
@@ -85,6 +114,19 @@ class ClutterRemovalSim(object):
         lz, uz = height + 0.005, self.size
         self.lower = np.r_[lx, ly, lz]
         self.upper = np.r_[ux, uy, uz]
+
+    def generate_conveyor_belt(self, object_count, table_height):
+        urdfs = self.rng.choice(self.object_urdfs, size=object_count)
+        self.scene_ids = []
+        for urdf in urdfs:
+            rotation = Rotation.random(random_state=self.rng)
+            xy = self.rng.uniform(1.0 / 3.0 * self.size, 2.0 / 3.0 * self.size, 2)
+            pose = Transform(rotation, np.r_[xy, table_height + 0.2])
+            scale = self.rng.uniform(0.8, 1.0)
+            obj_id = self.world.load_urdf(urdf, pose, scale=self.global_scaling * scale)
+            self.scene_ids.append(obj_id)
+            self.wait_for_objects_to_rest(timeout=1.0)
+        #self.remove_and_wait()
 
     def generate_pile_scene(self, object_count, table_height):
         # place box
